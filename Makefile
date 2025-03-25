@@ -73,6 +73,10 @@ else
 $(error This platform is not currently supported for building PojavLauncher)
 endif
 
+$(info java bin $(shell which java))
+$(info java dir $(shell dirname $(shell which java)))
+BOOTJDK = $(shell dirname $(shell which java))
+
 # Define PLATFORM_NAME from PLATFORM
 ifeq ($(PLATFORM),2)
 PLATFORM_NAME := ios
@@ -179,12 +183,18 @@ ifneq ($(call METHOD_DEPCHECK,cmake --version),1)
 $(error You need to install cmake)
 endif
 
+$(shell javac -version)
+$(shell java -version)
+$(info IOS is $(IOS))
+$(info BOOTJDK is $(BOOTJDK))
+$(shell $(BOOTJDK)/java -version)
+
 ifneq ($(call METHOD_DEPCHECK,$(BOOTJDK)/javac -version),1)
 $(error You need to install JDK 8)
 endif
 
 ifeq ($(IOS),0)
-ifeq ($(filter 1.8.0,$(shell $(BOOTJDK)/javac -version &> javaver.txt && cat javaver.txt | cut -b 7-11 && rm -rf javaver.txt)),)
+ifeq ($(findstring 1.8.0,$(shell $(BOOTJDK)/javac -version 2>&1)),)
 $(error You need to install JDK 8)
 endif
 endif
@@ -268,14 +278,25 @@ native:
 
 java:
 	echo '[PojavLauncher v$(VERSION)] java - start'
-	$(MAKE) -C JavaApp -j$(JOBS) BOOTJDK=$(BOOTJDK)
+	cd $(SOURCEDIR)/JavaApp; \
+	rm -rf local_out/lwjgl; \
+	mkdir -p local_out/{classes,lwjgl}; \
+	$(BOOTJDK)/javac -cp "libs/*:libs_lwjgl/*:libs_caciocavallo/*" -d local_out/classes $$(find src -type f -name "*.java" -print) -XDignore.symbol.file || exit 1; \
+	cd local_out/classes; \
+	$(BOOTJDK)/jar -cf ../launcher.jar android com net || exit 1; \
+	cp $(SOURCEDIR)/JavaApp/libs_lwjgl/lwjgl.jar .. || exit 1; \
+	cd ../lwjgl; \
+	find $(SOURCEDIR)/JavaApp/libs_lwjgl -name 'lwjgl-*.jar' -exec $(BOOTJDK)/jar -xf {} \; || exit 1; \
+	rm -rf META-INF; \
+	cp -R ../classes/org ./; \
+	$(BOOTJDK)/jar -uf ../lwjgl.jar . || exit 1;
 	echo '[PojavLauncher v$(VERSION)] java - end'
 
 jre: native
 	echo '[PojavLauncher v$(VERSION)] jre - start'
 	mkdir -p $(SOURCEDIR)/depends
 	cd $(SOURCEDIR)/depends; \
-	$(call METHOD_JAVA_UNPACK,8,'https://nightly.link/PojavLauncherTeam/android-openjdk-build-multiarch/workflows/build/buildjre8/jre8-ios-aarch64.zip'); \
+	$(call METHOD_JAVA_UNPACK,8,'https://nightly.link/PojavLauncherTeam/android-openjdk-build-multiarch/workflows/build/jre8-ios-jitjailed/jre8-ios-aarch64.zip'); \
 	$(call METHOD_JAVA_UNPACK,17,'https://nightly.link/PojavLauncherTeam/android-openjdk-build-multiarch/workflows/build/buildjre17-21/jre17-ios-aarch64.zip'); \
 	$(call METHOD_JAVA_UNPACK,21,'https://nightly.link/PojavLauncherTeam/android-openjdk-build-multiarch/workflows/build/buildjre17-21/jre21-ios-aarch64.zip'); \
 	if [ -f "$(ls jre*.tar.xz)" ]; then rm $(SOURCEDIR)/depends/jre*.tar.xz; fi; \
@@ -315,10 +336,9 @@ payload: native java jre assets
 	cp -R $(SOURCEDIR)/Natives/resources/en.lproj/LaunchScreen.storyboardc $(WORKINGDIR)/PojavLauncher.app/Base.lproj/ || exit 1
 	cp -R $(SOURCEDIR)/Natives/resources/* $(WORKINGDIR)/PojavLauncher.app/ || exit 1
 	cp $(WORKINGDIR)/*.dylib $(WORKINGDIR)/PojavLauncher.app/Frameworks/ || exit 1
-	cp -R $(SOURCEDIR)/JavaApp/libs/others/* $(WORKINGDIR)/PojavLauncher.app/libs/ || exit 1
-	cp $(SOURCEDIR)/JavaApp/build/*.jar $(WORKINGDIR)/PojavLauncher.app/libs/ || exit 1
-	cp -R $(SOURCEDIR)/JavaApp/libs/caciocavallo/* $(WORKINGDIR)/PojavLauncher.app/libs_caciocavallo || exit 1
-	cp -R $(SOURCEDIR)/JavaApp/libs/caciocavallo17/* $(WORKINGDIR)/PojavLauncher.app/libs_caciocavallo17 || exit 1
+	cp -R $(SOURCEDIR)/JavaApp/libs/* $(WORKINGDIR)/PojavLauncher.app/libs/ || exit 1
+	cp $(SOURCEDIR)/JavaApp/local_out/*.jar $(WORKINGDIR)/PojavLauncher.app/libs/ || exit 1
+	cp -R $(SOURCEDIR)/JavaApp/libs_caciocavallo* $(WORKINGDIR)/PojavLauncher.app/ || exit 1
 	$(call METHOD_DIRCHECK,$(OUTPUTDIR)/Payload)
 	cp -R $(WORKINGDIR)/PojavLauncher.app $(OUTPUTDIR)/Payload
 	if [ '$(SLIMMED_ONLY)' != '1' ]; then \
@@ -345,7 +365,7 @@ deploy:
 		ldid -S$(SOURCEDIR)/entitlements.trollstore.xml $(WORKINGDIR)/PojavLauncher.app/PojavLauncher || exit 1; \
 		sudo mv $(WORKINGDIR)/*.dylib $(PREFIX)Applications/PojavLauncher.app/Frameworks/ || exit 1; \
 		sudo mv $(WORKINGDIR)/PojavLauncher.app/PojavLauncher $(PREFIX)Applications/PojavLauncher.app/PojavLauncher || exit 1; \
-		sudo mv $(SOURCEDIR)/JavaApp/build/*.jar $(PREFIX)Applications/PojavLauncher.app/libs/ || exit 1; \
+		sudo mv $(SOURCEDIR)/JavaApp/local_out/*.jar $(PREFIX)Applications/PojavLauncher.app/libs/ || exit 1; \
 		cd $(PREFIX)Applications/PojavLauncher.app/Frameworks || exit 1; \
 		sudo chown -R 501:501 $(PREFIX)Applications/PojavLauncher.app/* || exit 1; \
 	elif [ '$(IOS)' = '0' ] && [ '$(DETECTPLAT)' = 'Darwin' ]; then \
@@ -397,7 +417,5 @@ clean:
 	rm -rf JavaApp/build
 	rm -rf $(OUTPUTDIR)
 	echo '[PojavLauncher v$(VERSION)] clean - end'
-
-		
 
 .PHONY: all clean check native java jre package dsym deploy help
