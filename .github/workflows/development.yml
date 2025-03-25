@@ -18,8 +18,6 @@ jobs:
         include:
           - platform: 2
             platform_name: ios
-          - platform: 3
-            platform_name: tvos
           - platform: 7
             platform_name: iossimulator
           - platform: 8
@@ -33,8 +31,8 @@ jobs:
         run: |
           echo "before"
           ls -lah ./
-          mkdir clean
-          cd clean
+          echo $password | sudo -S rm -rf ./* || true
+          echo $password | sudo -S rm -rf ./.??* || true
           echo "after"
           ls -lah ./
 
@@ -47,18 +45,13 @@ jobs:
           alias gmake='make'
           brew install ldid
           cd ..
-
+          
       - name: Setup Java JDK
         uses: actions/setup-java@v4.4.0
         with:
           java-version: 8
           distribution: zulu
 
-      - name: Check Java Version
-        run: |
-          java -version
-          echo $JAVA_HOME
-          
       - name: Checkout repository
         uses: actions/checkout@main
 
@@ -142,7 +135,7 @@ jobs:
           allow_forks: false
           repo: PojavLauncherTeam/android-openjdk-build-multiarch
           branch: buildjre17-21
-          name: jre17-ios-aarch64
+          name: jre21-ios-aarch64
 
       - name: Build for ${{ matrix.platform_name }}
         env:
@@ -152,14 +145,14 @@ jobs:
           export RUNNER=1 SLIMMED=1
           if [ "${{ matrix.platform_name }}" == "ios" ]; then
             # Build ipa and tipa for iOS
-            gmake -d dsym package PLATFORM=${{ matrix.platform }}
-            gmake -d dsym package PLATFORM=${{ matrix.platform }} TROLLSTORE_JIT_ENT=1
+            gmake -j$(sysctl -n hw.ncpu) dsym package PLATFORM=${{ matrix.platform }}
+            gmake -j$(sysctl -n hw.ncpu) dsym package PLATFORM=${{ matrix.platform }} TROLLSTORE_JIT_ENT=1
           elif [ "${{ matrix.platform_name }}" == "tvos" ]; then
             # Build tipa only for tvOS
-            gmake -d dsym package PLATFORM=${{ matrix.platform }} TROLLSTORE_JIT_ENT=1
+            gmake -j$(sysctl -n hw.ncpu) dsym package PLATFORM=${{ matrix.platform }} TROLLSTORE_JIT_ENT=1
           else
             # Build ipa only for everything else
-            gmake -d dsym package PLATFORM=${{ matrix.platform }}
+            gmake -j$(sysctl -n hw.ncpu) dsym package PLATFORM=${{ matrix.platform }}
           fi
 
       - name: Upload regular ipa
@@ -192,3 +185,4 @@ jobs:
         with:
           name: PojavLauncher.dSYM
           path: artifacts/PojavLauncher.dSYM
+
